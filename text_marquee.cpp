@@ -1,6 +1,6 @@
 // mini_os_emulator.cpp
-// g++ -std=c++11 -pthread mini_os_emulator.cpp -o mini_os_emulator.exe
-// ./mini_os_emulator.exe
+// g++ -std=c++11 text_marquee.cpp -o text_marquee.exe
+// text_marquee.cpp
 
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
@@ -16,12 +16,13 @@
 #include <cctype>
 #include <sstream>
 #include <conio.h>
-#include <windows.h> 
+#include <windows.h>
 
 using namespace std;
 
 // ===== GLOBAL VARIABLES =====
 atomic<bool> marquee_running(false);
+atomic<bool> marquee_paused(false);
 atomic<int> marquee_speed_ms(200);
 string marquee_text = "Hello, World!";
 
@@ -65,7 +66,7 @@ static inline void trim(string &s) { ltrim(s); rtrim(s); }
 // redraws the prompt
 void redraw_prompt() {
     lock_guard<mutex> lock2(input_mutex);
-    cout << "\033[12;1H"; // move to row 12
+    cout << "\033[12;1H";
     cout << "\033[2K\r> " << last_input << flush;
 }
 
@@ -86,7 +87,7 @@ void marquee_worker() {
             redraw_prompt();
         }
 
-        if (!marquee_text.empty()) {
+        if (!marquee_paused.load() && !marquee_text.empty()) {
             char first = marquee_text.front();
             marquee_text.erase(0, 1);
             marquee_text.push_back(first);
@@ -105,20 +106,10 @@ void show_help() {
     cout << "Commands:\n"
          << " help           - show this command list\n"
          << " start_marquee  - start scrolling text\n"
-         << " stop_marquee   - stop scrolling text\n"
+         << " stop_marquee   - stop scrolling text (freeze)\n"
          << " set_text       - set marquee message\n"
          << " set_speed      - set scroll speed (milliseconds)\n"
-         << " show_status    - show current marquee settings\n"
          << " exit           - close emulator\n\n";
-}
-void show_status() {
-    lock_guard<mutex> lock(console_mutex);
-    cout << "\033[2J\033[H";
-    cout << "Status:\n";
-    cout << " marquee running : "
-         << (marquee_running.load() ? "YES" : "NO") << "\n";
-    cout << " marquee text    : \"" << marquee_text << "\"\n";
-    cout << " marquee speed   : " << marquee_speed_ms.load() << " ms\n\n";
 }
 
 // ===== INPUT WORKER (RAW INPUT FOR WINDOWS) =====
@@ -177,20 +168,21 @@ void input_worker() {
                 marquee_running.store(false);
                 break;
             } else if (cmd_l == "start_marquee" || cmd_l == "start") {
-                if (marquee_running.load()) {
+                if (marquee_running.load() && !marquee_paused.load()) {
                     cout << "Marquee already running.\n\n";
                 } else {
                     marquee_running.store(true);
+                    marquee_paused.store(false);
                     cout << "\033[?25l";
                     cout << "Marquee started.\n\n";
                 }
             } else if (cmd_l == "stop_marquee" || cmd_l == "stop") {
-                if (!marquee_running.load()) {
+                if (!marquee_running.load() || marquee_paused.load()) {
                     cout << "Marquee already stopped.\n\n";
                 } else {
-                    marquee_running.store(false);
+                    marquee_paused.store(true);
                     cout << "\033[?25h";
-                    cout << "Marquee stopped.\n\n";
+                    cout << "Marquee paused (frozen in place).\n\n";
                 }
             } else if (cmd_l == "set_text") {
                 if (!rest.empty()) {
@@ -206,8 +198,6 @@ void input_worker() {
                 } catch (...) {
                     cout << "Invalid number. Please enter an integer.\n\n";
                 }
-            } else if (cmd_l == "show_status") {
-                show_status();
             } else {
                 cout << "Unknown command. Type 'help' for a list.\n\n";
             }
@@ -223,7 +213,7 @@ void input_worker() {
 
 // ===== MAIN =====
 int main() {
-    enable_ansi_escape(); // make sure Windows console understands \033 codes
+    enable_ansi_escape();
 
     marquee_thread = thread(marquee_worker);
 
