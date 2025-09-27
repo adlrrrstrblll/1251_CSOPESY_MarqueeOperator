@@ -13,6 +13,7 @@ using namespace std;
 
 // ---------------- GLOBALS ----------------
 atomic<bool> marqueeRunning(false);
+atomic<bool> animationActive(false);
 int speed = 50;
 mutex console_mutex;
 
@@ -33,7 +34,7 @@ void setCursorPosition(int x, int y) {
 }
 
 // Boat animation states
-enum class BoatState { APPROACH, CRASH, SINK, RESET };
+enum class BoatState { APPROACH, CRASH, TILT, SINK, RESET };
 
 // ---------------- BOAT ANIMATION ----------------
 void runMarquee() {
@@ -45,35 +46,47 @@ void runMarquee() {
 
     float frame = 0.0f;
     BoatState state = BoatState::APPROACH;
-    int crashFrame = 0;
+    int shockFrame = 0;
     int sinkFrame = 0;
 
     while (marqueeRunning) {
-        // full overwrite every frame
         vector<vector<char>> screen(screenHeight, vector<char>(screenWidth, ' '));
 
         int boat1Pos = static_cast<int>(frame * 0.5f);
         int boat2Pos = static_cast<int>(screenWidth - boatWidth - frame * 0.5f);
-
         int yBase = screenHeight - 4 - boatHeight;
 
         vector<string> boat1 = boatBase;
         vector<string> boat2 = boatBase;
 
-        // state machine
+        // --- state machine ---
         if (state == BoatState::APPROACH) {
             if (boat1Pos + boatWidth >= boat2Pos) {
-                state = BoatState::CRASH;
-                crashFrame = 0;
+                state = BoatState::CRASH; 
+                shockFrame = 0;
             }
         }
         else if (state == BoatState::CRASH) {
+            // boats shake + tilt
             for (int i = 0; i < boatHeight; i++) {
                 boat1[i] = string(i / 2, ' ') + boat1[i];
                 boat2[i] = string((boatHeight - i) / 2, ' ') + boat2[i];
             }
-            crashFrame++;
-            if (crashFrame > 20) {
+
+            // draw a big splash arc
+            int midX = (boat1Pos + boat2Pos + boatWidth) / 2;
+            int splashY = yBase - 2;
+            if (splashY >= 0 && splashY < screenHeight) {
+                string splash = "\\  ^  ^  ^  /";
+                int startX = midX - splash.size() / 2;
+                for (int i = 0; i < (int)splash.size(); i++) {
+                    int col = startX + i;
+                    if (col >= 0 && col < screenWidth) screen[splashY][col] = splash[i];
+                }
+            }
+
+            shockFrame++;
+            if (shockFrame > 15) {
                 state = BoatState::SINK;
                 sinkFrame = 0;
             }
@@ -81,6 +94,28 @@ void runMarquee() {
         else if (state == BoatState::SINK) {
             yBase += sinkFrame / 2;
             sinkFrame++;
+
+            // boats keep tilting while sinking
+            for (int i = 0; i < boatHeight; i++) {
+                boat1[i] = string(i / 3, ' ') + boat1[i];
+                boat2[i] = string((boatHeight - i) / 3, ' ') + boat2[i];
+            }
+
+            // --- FIRE EFFECT ---
+            if (sinkFrame < 40) { // fire fades out after some frames
+                vector<char> fireChars = {'^', '*', '!', '#', '\''};
+                for (int i = 0; i < boatHeight; i++) {
+                    for (int j = 0; j < (int)boat1[i].size(); j++) {
+                        if (boat1[i][j] != ' ' && rand() % 15 == 0) {
+                            boat1[i][j] = fireChars[rand() % fireChars.size()];
+                        }
+                        if (boat2[i][j] != ' ' && rand() % 15 == 0) {
+                            boat2[i][j] = fireChars[rand() % fireChars.size()];
+                        }
+                    }
+                }
+            }
+
             if (yBase > screenHeight) {
                 state = BoatState::RESET;
             }
@@ -92,31 +127,42 @@ void runMarquee() {
         }
 
         // draw boats
-        for (int i = 0; i < boatHeight; i++) {
-            int y = yBase + i;
-            if (y >= 0 && y < screenHeight) {
-                for (int x = 0; x < (int)boat1[i].size(); x++) {
-                    int pos1 = boat1Pos + x;
-                    int pos2 = boat2Pos + x;
-                    if (pos1 >= 0 && pos1 < screenWidth) screen[y][pos1] = boat1[i][x];
-                    if (pos2 >= 0 && pos2 < screenWidth) screen[y][pos2] = boat2[i][x];
+        if (state == BoatState::APPROACH || state == BoatState::CRASH || state == BoatState::SINK) {
+            for (int i = 0; i < boatHeight; i++) {
+                int y = yBase + i;
+                if (y >= 0 && y < screenHeight) {
+                    for (int x = 0; x < (int)boat1[i].size(); x++) {
+                        int pos1 = boat1Pos + x;
+                        int pos2 = boat2Pos + x;
+                        if (pos1 >= 0 && pos1 < screenWidth) screen[y][pos1] = boat1[i][x];
+                        if (pos2 >= 0 && pos2 < screenWidth) screen[y][pos2] = boat2[i][x];
+                    }
                 }
             }
         }
 
-        // draw waves
+        // --- draw waves ---
         for (int y = screenHeight - 3; y < screenHeight; y++) {
             for (int x = 0; x < screenWidth; x++) {
                 double wave = sin((x + frame * 0.5) * 0.5);
+
                 if (static_cast<int>(wave * 2) == y - (screenHeight - 3)) {
-                    if (state == BoatState::CRASH && rand() % 6 == 0)
-                        screen[y][x] = '^';
-                    else
+                    if (state == BoatState::CRASH) {
+                        // during crash → violent splashy waves
+                        char shockChars[] = { '~', '^', '#', '*' };
+                        screen[y][x] = shockChars[rand() % 4];
+                    }
+                    else if (state == BoatState::SINK && rand() % 6 == 0) {
+                        screen[y][x] = '^'; // lingering splashes
+                    }
+                    else {
                         screen[y][x] = '~';
+                    }
                 }
             }
         }
 
+        // --- render ---
         {
             lock_guard<mutex> lock(console_mutex);
             setCursorPosition(0, 0);
@@ -124,20 +170,21 @@ void runMarquee() {
                 for (int x = 0; x < screenWidth; x++) cout << screen[y][x];
                 cout << "\n";
             }
-            // padding
             for (int y = 0; y < 3; y++)
                 cout << string(screenWidth, ' ') << "\n";
 
             setCursorPosition(0, commandLine);
         }
 
-        if (state == BoatState::APPROACH) frame += 1.0f;
+        if (animationActive && state == BoatState::APPROACH) {
+            frame += 1.0f;
+        }
         Sleep(speed);
     }
 }
 
 void printOutput(const string &msg) {
-    const int commandLine = boatBase.size() + 12; // below input
+    const int commandLine = boatBase.size() + 12; 
     lock_guard<mutex> lock(console_mutex);
 
     setCursorPosition(0, commandLine);
@@ -153,38 +200,32 @@ void showHelp() {
         " start_marquee  - start boat animation\n"
         " stop_marquee   - stop animation\n"
         " set_speed <n>  - set animation speed (ms)\n"
-        " show_status    - show current status\n"
         " exit           - close emulator\n"
     );
-}
-
-void showStatus() {
-    stringstream ss;
-    ss << "Status:\n";
-    ss << " animation running : " << (marqueeRunning ? "YES" : "NO") << "\n";
-    ss << " animation speed   : " << speed << " ms/frame\n";
-    printOutput(ss.str());
 }
 
 void startAnimation() {
     if (!marqueeRunning) {
         marqueeRunning = true;
+        animationActive = true;
         thread(runMarquee).detach();
         printOutput("Animation started.");
     } else {
-        printOutput("Animation already running.");
+        animationActive = true;
+        printOutput("Animation resumed.");
     }
 }
 
 void stopAnimation() {
-    if (marqueeRunning) {
-        marqueeRunning = false;
-        printOutput("Animation stopped.");
+    if (marqueeRunning && animationActive) {
+        animationActive = false; 
+        printOutput("Animation paused (boats idle).");
+    } else if (!marqueeRunning) {
+        printOutput("Animation not started yet.");
     } else {
-        printOutput("Animation already stopped.");
+        printOutput("Animation already paused.");
     }
 }
-
 // ---------------- INPUT WORKER ----------------
 void inputWorker() {
     string current_input;
@@ -194,24 +235,24 @@ void inputWorker() {
         {
             lock_guard<mutex> lock(console_mutex);
             setCursorPosition(0, commandLine);
-            cout << "\033[2K"; // clear line
+            cout << "\033[2K"; 
             cout << "> " << current_input << flush;
         }
 
         if (_kbhit()) {
             char c = _getch();
-            if (c == '\r') { // Enter pressed
+            if (c == '\r') { 
                 string cmd = current_input;
                 current_input.clear();
 
-                // refresh screen before showing output
                 {
                     lock_guard<mutex> lock(console_mutex);
                     cout << "\033[2J\033[H";
                 }
 
                 if (cmd == "exit") {
-                    marqueeRunning = false;
+                    marqueeRunning = false; 
+                    animationActive = false;
                     break;
                 }
                 else if (cmd == "help") showHelp();
@@ -228,7 +269,6 @@ void inputWorker() {
                         cout << "Invalid number.\n";
                     }
                 }
-                else if (cmd == "show_status") showStatus();
                 else if (!cmd.empty()) {
                     cout << "Unknown command: " << cmd << "\n";
                 }
