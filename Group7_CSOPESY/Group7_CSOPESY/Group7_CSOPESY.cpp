@@ -19,7 +19,7 @@ using namespace std;
 atomic<bool> marquee_running(false);
 atomic<bool> marquee_paused(false);
 atomic<int> marquee_speed_ms(200);
-string marquee_text = "Hello, World!";
+string marquee_text = "Amazing";
 
 mutex console_mutex;
 thread marquee_thread;
@@ -39,22 +39,22 @@ void enable_ansi_escape() {
     SetConsoleMode(hOut, dwMode);
 }
 
-string to_lower_copy(const string &s) {
+string to_lower_copy(const string& s) {
     string r = s;
     transform(r.begin(), r.end(), r.begin(),
-              [](unsigned char c) { return tolower(c); });
+        [](unsigned char c) { return tolower(c); });
     return r;
 }
-static inline void ltrim(string &s) {
+static inline void ltrim(string& s) {
     s.erase(s.begin(),
-            find_if(s.begin(), s.end(), [](int ch) { return !isspace(ch); }));
+        find_if(s.begin(), s.end(), [](int ch) { return !isspace(ch); }));
 }
-static inline void rtrim(string &s) {
+static inline void rtrim(string& s) {
     s.erase(find_if(s.rbegin(), s.rend(),
-                    [](int ch) { return !isspace(ch); }).base(),
-            s.end());
+        [](int ch) { return !isspace(ch); }).base(),
+        s.end());
 }
-static inline void trim(string &s) { ltrim(s); rtrim(s); }
+static inline void trim(string& s) { ltrim(s); rtrim(s); }
 
 void redraw_prompt() {
     lock_guard<mutex> lock2(input_mutex);
@@ -74,7 +74,7 @@ void marquee_worker() {
             cout << "\033[10;1H";
             cout << "\033[2K";
             cout << "[MARQUEE] "
-                 << (marquee_text.empty() ? "" : marquee_text) << flush;
+                << (marquee_text.empty() ? "" : marquee_text) << flush;
             redraw_prompt();
         }
 
@@ -94,12 +94,12 @@ void show_help() {
     lock_guard<mutex> lock(console_mutex);
     cout << "\033[2J\033[H";
     cout << "Commands:\n"
-         << " help           - show this command list\n"
-         << " start_marquee  - start scrolling text\n"
-         << " stop_marquee   - stop scrolling text (freeze)\n"
-         << " set_text       - set marquee message\n"
-         << " set_speed      - set scroll speed (milliseconds)\n"
-         << " exit           - close emulator\n\n";
+        << " help           - show this command list\n"
+        << " start_marquee  - start scrolling text\n"
+        << " stop_marquee   - stop scrolling text (freeze)\n"
+        << " set_text       - set marquee message\n"
+        << " set_speed      - set scroll speed (milliseconds)\n"
+        << " exit           - close emulator\n\n";
 }
 
 void input_worker() {
@@ -149,45 +149,54 @@ void input_worker() {
 
             if (cmd_l == "help") {
                 show_help();
-            } else if (cmd_l == "exit") {
+            }
+            else if (cmd_l == "exit") {
                 {
                     lock_guard<mutex> lock(console_mutex);
                     cout << "Exiting... stopping marquee and closing.\n\n";
                 }
                 marquee_running.store(false);
                 break;
-            } else if (cmd_l == "start_marquee" || cmd_l == "start") {
+            }
+            else if (cmd_l == "start_marquee" || cmd_l == "start") {
                 if (marquee_running.load() && !marquee_paused.load()) {
                     cout << "Marquee already running.\n\n";
-                } else {
+                }
+                else {
                     marquee_running.store(true);
                     marquee_paused.store(false);
                     cout << "\033[?25l";
                     cout << "Marquee started.\n\n";
                 }
-            } else if (cmd_l == "stop_marquee" || cmd_l == "stop") {
+            }
+            else if (cmd_l == "stop_marquee" || cmd_l == "stop") {
                 if (!marquee_running.load() || marquee_paused.load()) {
                     cout << "Marquee already stopped.\n\n";
-                } else {
+                }
+                else {
                     marquee_paused.store(true);
                     cout << "\033[?25h";
                     cout << "Marquee paused (frozen in place).\n\n";
                 }
-            } else if (cmd_l == "set_text") {
+            }
+            else if (cmd_l == "set_text") {
                 if (!rest.empty()) {
                     marquee_text = rest;
                     cout << "Marquee text set to: \"" << marquee_text << "\"\n\n";
                 }
-            } else if (cmd_l == "set_speed") {
+            }
+            else if (cmd_l == "set_speed") {
                 try {
                     int v = stoi(rest);
                     if (v < 10) v = 10;
                     marquee_speed_ms.store(v);
                     cout << "Marquee speed set to " << v << " ms.\n\n";
-                } catch (...) {
+                }
+                catch (...) {
                     cout << "Invalid number. Please enter an integer.\n\n";
                 }
-            } else {
+            }
+            else {
                 cout << "Unknown command. Type 'help' for a list.\n\n";
             }
         }
@@ -207,16 +216,16 @@ void lock_console_view() {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     if (!GetConsoleScreenBufferInfo(hOut, &csbi)) return;
 
-    SHORT windowWidth  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    SHORT windowWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
     SHORT windowHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 
-    SMALL_RECT tempWindow = {0, 0, (SHORT)(windowWidth - 1), 0};
+    SMALL_RECT tempWindow = { 0, 0, (SHORT)(windowWidth - 1), 0 };
     SetConsoleWindowInfo(hOut, TRUE, &tempWindow);
 
-    COORD newSize = {windowWidth, windowHeight};
+    COORD newSize = { windowWidth, windowHeight };
     SetConsoleScreenBufferSize(hOut, newSize);
 
-    SMALL_RECT finalWindow = {0, 0, (SHORT)(windowWidth - 1), (SHORT)(windowHeight - 1)};
+    SMALL_RECT finalWindow = { 0, 0, (SHORT)(windowWidth - 1), (SHORT)(windowHeight - 1) };
     SetConsoleWindowInfo(hOut, TRUE, &finalWindow);
 
     DWORD mode;
