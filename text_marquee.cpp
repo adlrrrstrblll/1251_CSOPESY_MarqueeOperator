@@ -1,6 +1,4 @@
-// mini_os_emulator.cpp
 // g++ -std=c++11 text_marquee.cpp -o text_marquee.exe
-// text_marquee.cpp
 
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
@@ -20,7 +18,6 @@
 
 using namespace std;
 
-// ===== GLOBAL VARIABLES =====
 atomic<bool> marquee_running(false);
 atomic<bool> marquee_paused(false);
 atomic<int> marquee_speed_ms(200);
@@ -33,7 +30,6 @@ thread input_thread;
 string last_input;
 mutex input_mutex;
 
-// ===== ENABLE ANSI ESCAPES ON WINDOWS =====
 void enable_ansi_escape() {
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hOut == INVALID_HANDLE_VALUE) return;
@@ -45,7 +41,6 @@ void enable_ansi_escape() {
     SetConsoleMode(hOut, dwMode);
 }
 
-// ===== HELPERS =====
 string to_lower_copy(const string &s) {
     string r = s;
     transform(r.begin(), r.end(), r.begin(),
@@ -63,14 +58,12 @@ static inline void rtrim(string &s) {
 }
 static inline void trim(string &s) { ltrim(s); rtrim(s); }
 
-// redraws the prompt
 void redraw_prompt() {
     lock_guard<mutex> lock2(input_mutex);
     cout << "\033[12;1H";
-    cout << "\033[2K\r> " << last_input << flush;
+    cout << "\033[2K\rCommand> " << last_input << flush;
 }
 
-// ===== MARQUEE WORKER =====
 void marquee_worker() {
     while (true) {
         if (!marquee_running.load()) {
@@ -99,7 +92,6 @@ void marquee_worker() {
     }
 }
 
-// ===== COMMAND OUTPUT HELPERS =====
 void show_help() {
     lock_guard<mutex> lock(console_mutex);
     cout << "\033[2J\033[H";
@@ -112,7 +104,6 @@ void show_help() {
          << " exit           - close emulator\n\n";
 }
 
-// ===== INPUT WORKER (RAW INPUT FOR WINDOWS) =====
 void input_worker() {
     string current_input;
 
@@ -133,7 +124,7 @@ void input_worker() {
 
         char c = _getch();
 
-        if (c == '\r') { // Enter
+        if (c == '\r') {
             string cmdline = current_input;
             current_input.clear();
             {
@@ -202,7 +193,7 @@ void input_worker() {
                 cout << "Unknown command. Type 'help' for a list.\n\n";
             }
         }
-        else if (c == 8) { // Backspace
+        else if (c == 8) {
             if (!current_input.empty()) current_input.pop_back();
         }
         else {
@@ -211,17 +202,57 @@ void input_worker() {
     }
 }
 
-// ===== MAIN =====
+void lock_console_view() {
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut == INVALID_HANDLE_VALUE) return;
+
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (!GetConsoleScreenBufferInfo(hOut, &csbi)) return;
+
+    SHORT windowWidth  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    SHORT windowHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+
+    SMALL_RECT tempWindow = {0, 0, (SHORT)(windowWidth - 1), 0};
+    SetConsoleWindowInfo(hOut, TRUE, &tempWindow);
+
+    COORD newSize = {windowWidth, windowHeight};
+    SetConsoleScreenBufferSize(hOut, newSize);
+
+    SMALL_RECT finalWindow = {0, 0, (SHORT)(windowWidth - 1), (SHORT)(windowHeight - 1)};
+    SetConsoleWindowInfo(hOut, TRUE, &finalWindow);
+
+    DWORD mode;
+    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+    if (GetConsoleMode(hIn, &mode)) {
+        mode &= ~ENABLE_QUICK_EDIT_MODE;
+        mode |= ENABLE_EXTENDED_FLAGS;
+        SetConsoleMode(hIn, mode);
+    }
+
+    HWND hwnd = GetConsoleWindow();
+    if (hwnd) {
+        ShowScrollBar(hwnd, SB_BOTH, FALSE);
+    }
+
+    cout << "\033[2J\033[H";
+}
+
 int main() {
     enable_ansi_escape();
+    lock_console_view();
 
     marquee_thread = thread(marquee_worker);
 
     {
         lock_guard<mutex> lock(console_mutex);
         cout << "========================================\n";
-        cout << "  Mini-OS Emulator (CLI + Marquee)\n";
-        cout << "  Type 'help' to see available commands.\n";
+        cout << "  Welcome to CSOPESY!\n";
+        cout << "  Group Developers:\n";
+        cout << "    Sofia Ashley M. Aguete\n";
+        cout << "    Chrisane Ianna B. Gaspar\n";
+        cout << "    Evan Andrew J. Pinca\n";
+        cout << "    Adler Clarence E. Strebel\n";
+        cout << "  Version date: 01/01/2025\n";
         cout << "========================================\n\n";
     }
 
