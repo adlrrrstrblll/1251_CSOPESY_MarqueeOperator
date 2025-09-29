@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <conio.h>
 #include <sstream>
+#include <fstream>  // <-- needed for file reading
 using namespace std;
 
 // ---------------- GLOBALS ----------------
@@ -17,14 +18,29 @@ atomic<bool> animationActive(false);
 int speed = 50;
 mutex console_mutex;
 
-const vector<string> boatBase = {
-    "    __|__ |___| |\\",
-    "    |o__| |___| | \\",
-    "    |___| |___| |o \\",
-    "   _|___| |___| |__o\\",
-    "  /...\\_____|___|____\\_/",
-    "  \\   o * o * * o o  /"
-};
+// --- Load boat art from file (no fallback) ---
+vector<string> loadBoatFromFile(const string &filename) {
+    vector<string> boat;
+    ifstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Error: Could not open " << filename << ". Make sure the file exists.\n";
+        return boat;
+    }
+
+    string line;
+    while (getline(file, line)) {
+        boat.push_back(line);
+    }
+    file.close();
+
+    if (boat.empty()) {
+        cerr << "Error: " << filename << " is empty. Please add boat ASCII art.\n";
+    }
+    return boat;
+}
+
+// --- Load boat art at startup ---
+const vector<string> boatBase = loadBoatFromFile("boat.txt");
 
 // ---------------- UTILITIES ----------------
 void setCursorPosition(int x, int y) {
@@ -38,7 +54,7 @@ enum class BoatState { APPROACH, CRASH, TILT, SINK, RESET };
 
 // ---------------- BOAT ANIMATION ----------------
 void runMarquee() {
-    const int boatWidth = 22;
+    const int boatWidth = boatBase.empty() ? 0 : boatBase[0].size();
     const int boatHeight = boatBase.size();
     const int screenWidth = 100;
     const int screenHeight = boatHeight + 8;
@@ -62,18 +78,16 @@ void runMarquee() {
         // --- state machine ---
         if (state == BoatState::APPROACH) {
             if (boat1Pos + boatWidth >= boat2Pos) {
-                state = BoatState::CRASH; 
+                state = BoatState::CRASH;
                 shockFrame = 0;
             }
         }
         else if (state == BoatState::CRASH) {
-            // boats shake + tilt
             for (int i = 0; i < boatHeight; i++) {
                 boat1[i] = string(i / 2, ' ') + boat1[i];
                 boat2[i] = string((boatHeight - i) / 2, ' ') + boat2[i];
             }
 
-            // draw a big splash arc
             int midX = (boat1Pos + boat2Pos + boatWidth) / 2;
             int splashY = yBase - 2;
             if (splashY >= 0 && splashY < screenHeight) {
@@ -95,23 +109,19 @@ void runMarquee() {
             yBase += sinkFrame / 2;
             sinkFrame++;
 
-            // boats keep tilting while sinking
             for (int i = 0; i < boatHeight; i++) {
                 boat1[i] = string(i / 3, ' ') + boat1[i];
                 boat2[i] = string((boatHeight - i) / 3, ' ') + boat2[i];
             }
 
-            // --- FIRE EFFECT ---
-            if (sinkFrame < 40) { // fire fades out after some frames
+            if (sinkFrame < 40) {
                 vector<char> fireChars = {'^', '*', '!', '#', '\''};
                 for (int i = 0; i < boatHeight; i++) {
                     for (int j = 0; j < (int)boat1[i].size(); j++) {
-                        if (boat1[i][j] != ' ' && rand() % 15 == 0) {
+                        if (boat1[i][j] != ' ' && rand() % 15 == 0)
                             boat1[i][j] = fireChars[rand() % fireChars.size()];
-                        }
-                        if (boat2[i][j] != ' ' && rand() % 15 == 0) {
+                        if (boat2[i][j] != ' ' && rand() % 15 == 0)
                             boat2[i][j] = fireChars[rand() % fireChars.size()];
-                        }
                     }
                 }
             }
@@ -126,7 +136,6 @@ void runMarquee() {
             continue;
         }
 
-        // draw boats
         if (state == BoatState::APPROACH || state == BoatState::CRASH || state == BoatState::SINK) {
             for (int i = 0; i < boatHeight; i++) {
                 int y = yBase + i;
@@ -141,19 +150,16 @@ void runMarquee() {
             }
         }
 
-        // --- draw waves ---
         for (int y = screenHeight - 3; y < screenHeight; y++) {
             for (int x = 0; x < screenWidth; x++) {
                 double wave = sin((x + frame * 0.5) * 0.5);
-
                 if (static_cast<int>(wave * 2) == y - (screenHeight - 3)) {
                     if (state == BoatState::CRASH) {
-                        // during crash → violent splashy waves
                         char shockChars[] = { '~', '^', '#', '*' };
                         screen[y][x] = shockChars[rand() % 4];
                     }
                     else if (state == BoatState::SINK && rand() % 6 == 0) {
-                        screen[y][x] = '^'; // lingering splashes
+                        screen[y][x] = '^';
                     }
                     else {
                         screen[y][x] = '~';
@@ -162,7 +168,6 @@ void runMarquee() {
             }
         }
 
-        // --- render ---
         {
             lock_guard<mutex> lock(console_mutex);
             setCursorPosition(0, 0);
@@ -287,6 +292,11 @@ void inputWorker() {
 
 // ---------------- MAIN ----------------
 int main() {
+    if (boatBase.empty()) {
+        cerr << "No boat art loaded. Exiting.\n";
+        return 1;
+    }
+
     cout << "=== Mini-OS Emulator (Boat) ===\n";
     cout << "Type 'help' to see available commands.\n";
 
@@ -295,3 +305,4 @@ int main() {
 
     return 0;
 }
+
