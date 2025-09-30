@@ -14,7 +14,7 @@
 [1] In terminal (Command Prompt or PowerShell):
 ```bash
 # Compile the program
-g++ -o text_marquee text_marquee.cpp 
+g++ -std=c++11 text_marquee.cpp -o text_marquee.exe
 
 # Run the program
 text_marquee.exe
