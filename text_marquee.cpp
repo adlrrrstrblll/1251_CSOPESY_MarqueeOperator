@@ -19,7 +19,7 @@ using namespace std;
 atomic<bool> marquee_running(false);
 atomic<bool> marquee_paused(false);
 atomic<int> marquee_speed_ms(200);
-string marquee_text = "Hello, World!";
+string marquee_text = "Amazing!";
 
 mutex console_mutex;
 thread marquee_thread;
