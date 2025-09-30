@@ -19,7 +19,7 @@ g++ -std=c++11 text_marquee.cpp -o text_marquee.exe
 # Run the program
 text_marquee.exe
 ```
-### Method 2: Visual Studio Community
+### Visual Studio Community
 1. **Open Visual Studio Community**
 2. **Create New Project:**
    - File → New → Project
